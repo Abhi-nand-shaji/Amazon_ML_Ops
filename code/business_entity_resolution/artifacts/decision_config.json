@@ -1,0 +1,10 @@
+{
+  "mode": "global",
+  "global_threshold": 0.74,
+  "s2_threshold": 0.74,
+  "s3_threshold": 0.74,
+  "gate": null,
+  "validation_macro_f05": 0.962783109836692,
+  "oracle_given_blocking": 0.9875558449573475,
+  "holdout_macro_f05": 0.9646786045680446
+}

@@ -1,0 +1,205 @@
+# ML Challenge 2026: Business Entity Resolution Solution
+
+**Team Name:** [fill in]  
+**Team Members:** [fill in]  
+**Submission Date:** 2026-09-25 (pipeline built and validated on this date)
+
+---
+
+## 1. Executive Summary
+
+The solution is **candidate generation in three cheap steps + a supervised matcher**. Inside each country partition, (1) inverted
+indices retrieve every pool record that shares a *specific* key with the Source-1 (S1) entity (rare tokens, exact keys, **address / name
+bigrams**, **compact-name prefix**); (2) a **small learned ranker** over the retrieval evidence keeps a shortlist of the best 30
+({SHORTLIST_RECALL} of all true pairs); (3) a **light learned candidate filter** (a few character-level similarities on top of the
+retrieval evidence) drops shortlisted pairs whose match probability is below {FILTER_FLOOR}. The final candidate set holds
+**{CAND_RECALL} of all true pairs with {CAND_PER_ENTITY} candidates per entity** (the first design held 82% with 175; on the test split
+{TEST_CPE} per entity). A LightGBM matcher over ~90 vectorized pairwise features scores exactly these candidates, and the decision
+threshold is chosen on the challenge's own metric (per-entity F0.5, singleton rule included) using S1 *entities* held out from training.
+On {N_HOLDOUT} hold-out entities never used for any decision the macro F0.5 is **{HOLDOUT_F05}** (simple baselines: {BASELINE_RANGE}).
+
+---
+
+## 2. Methodology
+
+### 2.1 Problem Analysis
+Measured on the training data (`code/business_entity_resolution/reports/data_analysis_report.md`):
+* **Scale**: 2.2M S1, 5.0M S2, 5.3M S3 training records (1.7M / 4.9M / 5.1M test). A Cartesian product is impossible (about 2x10^13 same-country S1 x pool pairs in the training split alone).
+* **Country is a perfect blocking key**: 0 of 7,638,365 true pairs cross a country boundary. The test set adds France (15% of S1) which never
+  appears in training, so `country` is used only to *partition*, never as a model feature or a hard-coded vocabulary.
+* **Structure**: S1 is deduplicated; each S2/S3 record belongs to at most one S1 entity; 5.6% of S1 entities are true singletons, the mean
+  entity has 3.46 matches (max 11), 80% have matches in both sources. A singleton predicted with any match scores 0, a correctly empty
+  prediction scores 1, so singleton control is worth ~5.6 points of the metric.
+* **Noise**: only 21.9% of true pairs have identical names after normalization; 14.4% share no name token at all. Names carry typos, accent
+  corruption, legal-suffix and word-order changes, concatenated / domain-style forms (`gurgaontechnologiesclinic.com`), and 11-19% of S2/S3 names
+  are non-ASCII (about half plain Latin text with corrupted accents, the rest Devanagari and 8 other Indic scripts; 13.9% of true pairs have exactly one non-ASCII name)
+  while their addresses stay mostly Latin.
+  Addresses lose components (3.4% are empty), get abbreviated (`Rd`, `Ave`, `KA` for `Karnataka`), reordered, zero-padded (`019` vs `19`) or truncated.
+  Postal codes exist in only ~7% of addresses.
+
+### 2.2 Solution Strategy
+**Approach Type:** Blocking (multi-key retrieval -> learned ranker -> learned candidate filter) -> gradient-boosted pairwise classifier -> entity-level threshold.
+**Core Innovation:** (1) *retrieval keys that stay specific when every word is common* (adjacent-token bigrams, compact-name prefix) combined with
+a *learned cheap ranker* instead of a hand-written score - the earlier rare-token score ties massively (hundreds of candidates share the one rare
+address token) and its per-entity cap kept an arbitrary subset; (2) an *adaptive, learned candidate cut*: instead of a fixed number per entity,
+each entity keeps only the shortlisted records that are plausible - one or two for an easy entity, more for an ambiguous one, none when nothing in
+the pool is plausible (which is also the right answer for a singleton) - {SHORTLIST_CPE} -> {CAND_PER_ENTITY} candidates per entity for
+{SHORTLIST_RECALL} -> {CAND_RECALL} recall and no measurable change in F0.5; (3) evaluation that mimics the real task (entity-level split, exact metric,
+out-of-fold candidate cuts, a hold-out never used for selection); (4) everything vectorized (int-coded tokens, sparse token matrices,
+multithreaded C++ string similarity), so the 1.7M-entity test split runs end to end on one laptop (see 3.1).
+
+---
+
+## 3. Candidate Generation (Blocking)
+
+Candidate generation has three steps; the output of the last one is the candidate set the matcher scores and `candidate_pairs.tsv` lists.
+
+- **Step 1 - retrieval, blocking keys used** (a pool record is retrieved if ANY key fires; every key family has a document-frequency cap):
+  1. rare unigram tokens (each S1 entity looks up its 3 rarest name / 4 rarest address tokens with pool df <= 300);
+  2. exact keys: normalized name, compact name, postal code;
+  3. **address bigrams** and **name bigrams** (adjacent tokens, order-insensitive, df <= 300) - retrieve non-Latin-name pairs through their clean address and
+     missing-address pairs through their name (85% of the pairs the first design never retrieved share an address bigram);
+  4. **compact core-name prefix** (first 8 characters of the space-free name without legal suffixes) - concatenated / domain-style names;
+  5. leading-zero-insensitive numeric tokens (`019` = `19`).
+  Country is a hard partition (0 of 7.6M true pairs cross it).
+- **Step 2 - ranking to a shortlist**: every retrieved pair (~450 per entity) gets cheap evidence (IDF-weighted Dice overlap of name and address over
+  *all* tokens on padded int token matrices at ~1 us/pair, hit counts per rule, token counts); a small LightGBM ranker (trained on 12,000 S1 entities
+  outside the matcher's training sample, so it never saw validation labels) keeps the best 30 per entity: {SHORTLIST_CPE} per entity,
+  {SHORTLIST_RECALL} of all true pairs.
+- **Step 3 - learned candidate filter** (`candidate_filter.py`, `train_candidate_filter.py`, `run_candidate_cut.py`): most of the 30 are obviously wrong
+  (the median shortlisted pair has a ranker probability below 0.01), so a second, still cheap LightGBM filter scores each shortlisted pair from the
+  retrieval evidence (overlaps, rule hits, exact-key flags, token counts, rank in the shortlist) plus seven character-level similarities
+  (token-set / partial ratio of the names, ratio / Jaro-Winkler of the legal-suffix-free core names, token-set / partial / plain ratio of the addresses)
+  and missing-field / house-number flags; a pair survives if its probability is at least **{FILTER_FLOOR}**. The floor is the largest value that still keeps
+  at least {FILTER_KEEP} of the shortlisted true pairs of the matcher's validation entities. The filter is cross-fitted (5 folds of S1 entities): every
+  training pair is cut by a filter that never saw its entity, so the matcher is trained and validated on candidate sets cut exactly like the test
+  split's (which uses the filter fitted on all folds). The ranker probability and the pool-size-dependent statistics are deliberately *not* filter inputs:
+  the unseen test country France has a 3-4x smaller pool and a visibly inflated ranker probability (median at shortlist rank 10: 0.50 in France,
+  0.03 in India, 0.01 in the US), and leaving them out cost nothing on validation. Most important filter inputs: {FILTER_TOP_FEATURES}.
+  Size / recall trade-off of the floor (out-of-fold, 50,000 training entities):
+
+{FILTER_TABLE}
+
+- **Candidate pairs generated**: {TEST_PAIRS} for {TEST_S1} test S1 entities (**{TEST_CPE} per entity**; the shortlist had {TEST_SHORTLIST_PAIRS},
+  {TEST_SHORTLIST_CPE} per entity); candidate reduction ratio > 0.99999 versus the same-country cross product. `output/candidate_pairs.tsv` is exactly
+  this set, the matcher scores exactly these pairs, and every predicted match is one of them. Per country: B.5.
+- **How true matches were not lost**: recall was measured per step, per rule and per cap on ground truth, and the design was iterated on the failure
+  categories: first design 82.1% recall at 175 candidates/entity -> retrieval + ranker {SHORTLIST_RECALL} at {SHORTLIST_CPE} -> final {CAND_RECALL} at
+  {CAND_PER_ENTITY} (tables in Appendix B.2). A plain floor on the ranker probability needs about 15 candidates per entity for the recall the filter keeps
+  with about 6 (experiment 9 in B.2). The misses are dominated by non-Latin names with sparse addresses and by candidates with missing addresses and
+  scrambled names (`reports/blocking_report.md`).
+
+### 3.1 Scalability ("blocking has to scale")
+* **No pairwise comparison outside the retrieved set.** Retrieval is inverted-index lookups: each S1 entity reads at most K rare-token postings and the
+  bigram / prefix / exact-key postings of its own keys, and every key with a document frequency above its cap (300) is never read, so the work per entity is
+  bounded by (number of keys x cap) no matter how large the pool grows; the ranker and the filter cost O(1) per retrieved / shortlisted pair, and the
+  filter only ever sees 30 pairs per entity. Total cost is linear in the number of S1 entities (queries) plus linear in the pool (index build).
+* **Partitioned and streaming.** Country partitions are independent (0 of 7.6M true pairs cross a country), the pool index is built once per partition and
+  queried in S1 chunks with bounded memory (`--chunk-s1`, `--expansion-budget`), and every stage is resumable per chunk / country. At larger scale the same
+  code shards by partition (country, then region / postal prefix) and by S1 chunk across machines.
+* **Measured on one laptop** (8 cores, 15 GB RAM, no GPU): test split = 1.73M S1 entities against 10M pool records: retrieval + ranker 71 min, candidate
+  filter {CUT_TEST_MIN} min, featurize + score the {TEST_PAIRS} candidates {SCORE_TEST_MIN} min, decisions and output files under a minute.
+
+---
+
+## 4. Matching Model
+
+**Features used** (~90, all country-agnostic, NaN when a field is missing on either side):
+- Name features: exact equality (normalized / legal-suffix-free core), Levenshtein ratio, Jaro-Winkler, token-sort, token-set, partial ratio (on the normalized
+  name and on the core name), token Jaccard / Dice / containment in both directions / IDF cosine / IDF overlap, numeric-token overlap, length differences,
+  script code of both names (fixed vocabulary), and rule evidence from blocking.
+- Address features: exact equality, the same five string similarities, token Jaccard / Dice / containment / IDF cosine / IDF overlap, numeric-token overlap
+  (house / plot numbers), house-number and postal-code agreement, length differences.
+- Other: S2 vs S3, blocker evidence (overlap scores, hits per rule, ranker score), position of the candidate inside its entity (rank / gap to the best by several
+  scores), ambiguity context (how many candidates of the entity already agree strongly on name / address), and cross-field products / min / max.
+  Pool-ambiguity statistics - how many pool records / S1 entities carry the identical name, core name or address, plus IDF sums and rare-token counts - are used;
+  they are the largest single gain of the matcher (see B.1) but their scale depends on the size of the country pool, which is a documented risk for France.
+
+**Model type:** LightGBM (MIT licence, {N_TREES} trees, 127 leaves) trained on S1-entity-disjoint data; sklearn HistGradientBoosting and LogisticRegression were
+trained on the same features for the model comparison (Appendix B). The matcher is trained, validated and applied on the *final* candidate sets (after the
+filter), so its within-entity features (rank, gaps, number of candidates, how many candidates agree strongly) describe exactly the set it decides on.
+{MODEL_SELECTION}
+
+**Threshold selection method:** search on validation entities for the threshold maximising macro F0.5 *under the challenge's own scoring rule*
+(per entity, singleton = 1 only when empty). Per-source (S2/S3) thresholds and an entity-level gate (the best candidate must clear a higher bar) were tried and
+adopted only when they beat the simple rule by a margin; {DECISION_RULE}.
+
+---
+
+## 5. Results & Error Analysis
+
+- **F_0.5 Score (macro):** hold-out entities (never used for training, early stopping, threshold or rule selection): **{HOLDOUT_F05}**
+  (validation entities: {VAL_F05}; the ceiling if every true pair that is a candidate were predicted is {CEILING}). Reference points on the same
+  validation entities: exact normalized name {B1_F05}, fuzzy name + address rule {B2_F05}, best similarity-score threshold {B3_F05}, TF-IDF cosine threshold {B3B_F05},
+  LightGBM {VAL_F05}. {HOLDOUT_DETAILS}
+- **Common false positives (wrong merges):** {FALSE_POSITIVES}
+- **Common false negatives (missed matches):** {FALSE_NEGATIVES}
+
+Per-edge-case results (26 cases of the brief, with counts, candidate recall, precision, recall, F0.5, failure taxonomy and examples) are in
+`code/business_entity_resolution/reports/edge_case_report.md`; the summary is in Appendix B.
+
+---
+
+## 6. Conclusion
+
+{CONCLUSION}
+
+---
+
+## Appendix
+
+### A. Code Artefacts
+`code/business_entity_resolution/` (all source in `src/`, unit tests in `tests/`, `README.md`, pinned `requirements.txt`). Pipeline entry points, in order:
+`run_all.py` runs the whole chain: `prepare_cache.py` (normalize once, chunked/resumable) -> `train_ranker.py` -> `run_blocking.py --split train` (retrieval +
+ranker shortlist) -> `train_candidate_filter.py` (cross-fitted filter + floor) -> `run_candidate_cut.py --split train` -> `run_features.py --split train` ->
+`run_train.py` (matcher, thresholds, model comparison, baselines, experiment log) -> `promote_model.py` -> `run_blocking.py --split test` ->
+`run_candidate_cut.py --split test` -> `run_score.py --split test` -> `run_infer.py` (writes `output/matching_results.tsv` and `output/candidate_pairs.tsv`)
+-> `utils/validate_submission.py`. `run_blocking_report.py` and `run_edge_cases.py` produce the diagnostics. Exact commands are in the README.
+
+### B. Additional Results
+#### B.1 Experiment log (validation entities; last row = hold-out entities never used for any decision)
+Blocking strategy, features, model, threshold, candidate recall, precision, recall, F0.5, singleton accuracy and average candidates per entity of every
+experiment (baselines 1-3b, LightGBM with the three decision rules, sklearn model families, hold-out):
+
+{EXPERIMENT_LOG}
+
+#### B.2 Candidate generation experiments
+{BLOCKING_LOG}
+
+#### B.3 Failure taxonomy and edge cases (validation entities)
+{TAXONOMY}
+
+Per edge case (the 26 cases of the brief that can be evaluated on the labelled data; entities may belong to several cases):
+
+{EDGE_TABLE}
+
+Cases that are structural rather than measurable: country conflict (0 of 7.6M true pairs cross a country, candidates are generated per country partition), unseen country
+(France, test only), duplicate candidates (candidates are a deduplicated union), empty ground truth (parsed as zero matches), output-subset invariant, S1 ids in
+predictions and duplicate predicted ids (all verified on the real output files by `run_edge_cases.py` and `utils/validate_submission.py`).
+
+#### B.4 Source 2 versus Source 3
+{SOURCE_TABLE}
+
+#### B.5 Test-set prediction statistics per country (France has no labels: only prediction rates can be compared)
+{INFERENCE_PER_COUNTRY}
+
+#### B.6 Most important model features (share of total gain)
+{TOP_FEATURES}
+
+### C. Limitations and honest notes
+* France is unseen in training and has no labels, so its accuracy cannot be measured. Nothing in the pipeline is country-specific (`country` only partitions the
+  data). Label-free checks on the test predictions (`reports/inference_summary.json`):
+
+{LABELFREE_TABLE}
+
+  France has more candidates per entity and fewer entities without any plausible candidate than India and the US. That can mean more true matches per French
+  entity or easier matching, or over-merging because its pool is 3-4x smaller and its addresses share many tokens inside a region (`Pays de la Loire`), which
+  inflates token-overlap evidence; without labels the two cannot be told apart. Mitigations in place: the candidate filter does not use the ranker probability or
+  pool-size-dependent statistics, and a matcher variant without pool-size-dependent features was trained for comparison (Section 4); it was not promoted because it
+  is worse on the labelled countries. A small-pool simulation was not run.
+* Non-Devanagari Indic scripts are not transliterated (only Devanagari has a rule-based transliterator); such records are matched through their addresses.
+* The matcher was trained on a 50,000-entity sample of the 2.2M training entities (all candidates of those entities); more training entities were not tried.
+* The pool-side constraint "each S2/S3 record belongs to at most one S1 entity" is not enforced at inference; on validation, false positives that are records
+  owned by another S1 entity account for 51% of all false positives (89 of 176; removing exactly those would raise validation F0.5 from 0.9628 to 0.9658, an
+  upper bound of +0.30 points; `src/exp_conflict_potential.py`).
+* No external data, APIs, geocoders or pre-trained models are used anywhere; all statistics come from the provided files.

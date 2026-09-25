@@ -1,0 +1,66 @@
+{
+  "pairs": 12288781,
+  "matched_pairs": 5671608,
+  "entities_with_match": 1626116,
+  "entities_with_candidates": 1731764,
+  "per_country": {
+    "France": {
+      "s1_entities": 259452,
+      "candidate_pairs": 2417100,
+      "candidates_per_entity": 9.316174090005088,
+      "share_without_candidates": 0.00038542774771443966,
+      "entities_with_match": 247200,
+      "share_with_match": 0.9527773923500301,
+      "predicted_matches_per_entity": 3.526891293958035,
+      "predicted_matches_per_entity_that_has_one": 3.7016949838187703,
+      "share_s2_of_matches": 0.47865766032572765,
+      "mean_score_of_kept_pairs": 0.9859103560447693,
+      "share_best_score_ge_0.97": 0.9395842005457656,
+      "share_best_score_0.4_to_0.9": 0.017448314139031498,
+      "share_best_score_below_0.2_or_no_candidate": 0.026729414303994573
+    },
+    "India": {
+      "s1_entities": 809986,
+      "candidate_pairs": 5879544,
+      "candidates_per_entity": 7.258821757413091,
+      "share_without_candidates": 0.00010617467462403773,
+      "entities_with_match": 755038,
+      "share_with_match": 0.9321617904506991,
+      "predicted_matches_per_entity": 3.1282034504300076,
+      "predicted_matches_per_entity_that_has_one": 3.355858910412456,
+      "share_s2_of_matches": 0.4861565687281677,
+      "mean_score_of_kept_pairs": 0.987730085849762,
+      "share_best_score_ge_0.97": 0.9149207517166963,
+      "share_best_score_0.4_to_0.9": 0.015716321022832495,
+      "share_best_score_below_0.2_or_no_candidate": 0.05161323775966498
+    },
+    "US": {
+      "s1_entities": 663106,
+      "candidate_pairs": 3992137,
+      "candidates_per_entity": 6.020360244063544,
+      "share_without_candidates": 0.0008957843843970803,
+      "entities_with_match": 623878,
+      "share_with_match": 0.9408420373213332,
+      "predicted_matches_per_entity": 3.3520251664138163,
+      "predicted_matches_per_entity_that_has_one": 3.562792725500819,
+      "share_s2_of_matches": 0.48365401745946907,
+      "mean_score_of_kept_pairs": 0.9914055466651917,
+      "share_best_score_ge_0.97": 0.9336154400653892,
+      "share_best_score_0.4_to_0.9": 0.007742351901505943,
+      "share_best_score_below_0.2_or_no_candidate": 0.04912789207155417
+    }
+  },
+  "n_s1_entities": 1732544,
+  "runtime_seconds": 7.6,
+  "decision_config": {
+    "mode": "global",
+    "global_threshold": 0.74,
+    "s2_threshold": 0.74,
+    "s3_threshold": 0.74,
+    "gate": null,
+    "validation_macro_f05": 0.962783109836692,
+    "oracle_given_blocking": 0.9875558449573475,
+    "holdout_macro_f05": 0.9646786045680446
+  },
+  "stage": 1
+}

@@ -1,0 +1,12 @@
+{
+  "default": {
+    "validation": 0.962783109836692,
+    "holdout": 0.9646786045680446
+  },
+  "robust": {
+    "validation": 0.9551740188677422,
+    "holdout": 0.9559735709258971
+  },
+  "tolerance": 0.002,
+  "promoted": "default"
+}
