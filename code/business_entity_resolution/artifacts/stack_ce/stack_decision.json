@@ -1,0 +1,6 @@
+{
+  "mode": "global",
+  "global_threshold": 0.73,
+  "validation_macro_f05": 0.980242494320041,
+  "holdout_macro_f05": 0.9818355219400037
+}

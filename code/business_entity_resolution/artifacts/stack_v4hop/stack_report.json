@@ -1,0 +1,101 @@
+{
+  "candidates_val": {
+    "candidate_recall": 0.9781521655511962,
+    "candidates_per_entity": 7.3406666666666665
+  },
+  "candidates_hold": {
+    "candidate_recall": 0.9789719626168224,
+    "candidates_per_entity": 7.3722666666666665
+  },
+  "oracle: exactly the true candidates": {
+    "threshold": 0.05,
+    "val_macro_f05": 0.9907188223652714,
+    "hold_macro_f05": 0.9913069147170045,
+    "hold_precision": 0.9965938120919671,
+    "hold_recall": 0.9772063627229678,
+    "hold_singleton_acc": 1.0
+  },
+  "first-stage LightGBM p1": {
+    "threshold": 0.64,
+    "val_macro_f05": 0.9640101310828108,
+    "hold_macro_f05": 0.9653531314576819,
+    "hold_precision": 0.982919105289954,
+    "hold_recall": 0.9264169921918999,
+    "hold_singleton_acc": 0.9691629955947136
+  },
+  "exclusivity-normalized q(p1)": {
+    "threshold": 0.52,
+    "val_macro_f05": 0.9678367569539171,
+    "hold_macro_f05": 0.9683164268772559,
+    "hold_precision": 0.9852355158166967,
+    "hold_recall": 0.9318383389877856,
+    "hold_singleton_acc": 0.9669603524229075
+  },
+  "cross-encoder alone": {
+    "threshold": 0.79,
+    "val_macro_f05": 0.9715437361743731,
+    "hold_macro_f05": 0.9724960183188959,
+    "hold_precision": 0.9908090372112512,
+    "hold_recall": 0.9283201884216644,
+    "hold_singleton_acc": 0.9779735682819384
+  },
+  "mean(p1, p_ce)": {
+    "threshold": 0.56,
+    "val_macro_f05": 0.9761913280742879,
+    "hold_macro_f05": 0.9772648755562627,
+    "hold_precision": 0.9897415622507874,
+    "hold_recall": 0.9477578745567675,
+    "hold_singleton_acc": 0.986784140969163
+  },
+  "STACKER": {
+    "threshold": 0.83,
+    "val_macro_f05": 0.9825514542794793,
+    "hold_macro_f05": 0.9840902178595698,
+    "hold_precision": 0.9945960558506683,
+    "hold_recall": 0.955967699786888,
+    "hold_singleton_acc": 0.9977973568281938,
+    "trees": 486
+  },
+  "feature_gain_share_top40": {
+    "p_ce": 0.82564,
+    "ps_q": 0.09484,
+    "ps_gap_best_other": 0.03423,
+    "new_score": 0.00791,
+    "ps_sum_other": 0.00405,
+    "p1": 0.00218,
+    "ov_addr": 0.00137,
+    "s_gap_to_best_other": 0.00109,
+    "ps_best_other": 0.00102,
+    "prelim_gap_to_best": 0.00079,
+    "sib_best_agree_p": 0.00073,
+    "sib_wsim_name": 0.00066,
+    "ps_n_claim": 0.00066,
+    "s_top1": 0.00066,
+    "addr_token_set": 0.00061,
+    "name_ratio_gap": 0.00061,
+    "sim_min": 0.00061,
+    "hop_rank": 0.0006,
+    "name_ratio": 0.0006,
+    "sim_prod": 0.00057,
+    "s_top2": 0.00055,
+    "e_top2": 0.00053,
+    "e_top3": 0.00052,
+    "s_best_other": 0.0005,
+    "s1_core_freq": 0.00049,
+    "ps_rank": 0.00048,
+    "s_top3": 0.00047,
+    "e_sum": 0.00045,
+    "name_len_2": 0.00044,
+    "pool_core_freq": 0.00042,
+    "block_gap_to_best": 0.00042,
+    "addr_len_diff": 0.00041,
+    "e_gap_to_best_other": 0.0004,
+    "s_sum": 0.00039,
+    "sib_wsim_addr": 0.00037,
+    "prelim_score": 0.00037,
+    "rank_score": 0.00037,
+    "pool_name_freq": 0.00036,
+    "addr_len_1": 0.00036,
+    "nt_idf_cos": 0.00034
+  }
+}

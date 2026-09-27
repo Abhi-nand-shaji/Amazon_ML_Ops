@@ -95,14 +95,21 @@ def main():
     ap.add_argument("--root", default=None)
     ap.add_argument("--tag", default="", help="pipeline-variant suffix (candidates, scores and decision config)")
     ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--scores-dir", default=None,
+                    help="score files to decide on instead of scores_test<tag> (e.g. the stacker's, run_stack_infer.py)")
+    ap.add_argument("--decision-config", default=None, help="decision config json to use with --scores-dir")
     args = ap.parse_args()
 
     paths = Paths(args.root, args.tag)
     t = paths.suffix
-    cfg = json.loads(paths.threshold_path().read_text())
+    if bool(args.scores_dir) != bool(args.decision_config):
+        sys.exit("--scores-dir and --decision-config go together")
+    cfg = json.loads(Path(args.decision_config).read_text()) if args.decision_config else json.loads(paths.threshold_path().read_text())
+    score_root = Path(args.scores_dir) if args.scores_dir else scores_dir(paths, args.split)
+    summary_name = f"inference_summary_{score_root.name}" if args.scores_dir else f"inference_summary{t}"
     stage2 = None                                   # (booster, feature columns, decision config) when run_stage2 adopted it
     s2_cfg_path = paths.artifacts_dir / f"decision_config_stage2{t}.json"
-    if s2_cfg_path.exists() and json.loads(s2_cfg_path.read_text()).get("adopted"):
+    if not args.scores_dir and s2_cfg_path.exists() and json.loads(s2_cfg_path.read_text()).get("adopted"):
         stage2 = (lgb.Booster(model_file=str(paths.artifacts_dir / f"stage2_model{t}.txt")),
                   json.loads((paths.artifacts_dir / f"stage2_features{t}.json").read_text()), json.loads(s2_cfg_path.read_text()))
         cfg = stage2[2]
@@ -127,7 +134,7 @@ def main():
         for country in candidate_countries(paths, args.split):
             cand = pq.read_table(candidates_dir(paths, args.split) / f"country={country}.parquet",
                                  columns=["s1_row", "s1_entity_id", "cand_entity_id"] + (BLOCKER_COLS if stage2 else []))
-            sc = pq.read_table(scores_dir(paths, args.split) / f"country={country}.parquet")
+            sc = pq.read_table(score_root / f"country={country}.parquet")
             s1_row = cand["s1_row"].to_numpy()
             if len(sc) != len(cand) or not np.array_equal(sc["s1_row"].to_numpy(), s1_row):
                 raise RuntimeError(f"[{country}] scores are not row-aligned with the candidate file")
@@ -184,7 +191,7 @@ def main():
     replace_with_retry(tmp_c, out_dir / "candidate_pairs.tsv")
     stats.update(n_s1_entities=len(all_ids), runtime_seconds=round(time.time() - t0, 1), decision_config=cfg,
                  stage=2 if stage2 else 1)
-    (paths.reports_dir / f"inference_summary{t}.json").write_text(json.dumps(stats, indent=2))
+    (paths.reports_dir / f"{summary_name}.json").write_text(json.dumps(stats, indent=2))
     print(f"wrote {out_dir / 'matching_results.tsv'} and {out_dir / 'candidate_pairs.tsv'}: {stats}", flush=True)
 
 

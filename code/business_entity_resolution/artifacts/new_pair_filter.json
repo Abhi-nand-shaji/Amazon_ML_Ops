@@ -1,0 +1,103 @@
+{
+  "features": [
+    "src_dense",
+    "src_hop",
+    "dense_score",
+    "dense_rank",
+    "hop_rank",
+    "hop_conf",
+    "hop_n",
+    "nf_name_set",
+    "nf_name_ratio",
+    "nf_addr_set",
+    "nf_addr_ratio",
+    "nf_addr_empty",
+    "nf_name_nonlatin"
+  ],
+  "floor": 0.003,
+  "keep_share": 0.9,
+  "max_new_per_entity": 3.0,
+  "tradeoff_val": [
+    {
+      "floor": 0.001,
+      "kept_true_share": 0.9640883977900553,
+      "new_per_entity": 2.5452,
+      "precision": 0.018282780659018283
+    },
+    {
+      "floor": 0.002,
+      "kept_true_share": 0.9392265193370166,
+      "new_per_entity": 1.6538666666666666,
+      "precision": 0.027410512737826506
+    },
+    {
+      "floor": 0.003,
+      "kept_true_share": 0.9005524861878453,
+      "new_per_entity": 1.2652,
+      "precision": 0.034355569606913265
+    },
+    {
+      "floor": 0.005,
+      "kept_true_share": 0.850828729281768,
+      "new_per_entity": 0.8452,
+      "precision": 0.04858810537939738
+    },
+    {
+      "floor": 0.01,
+      "kept_true_share": 0.8149171270718232,
+      "new_per_entity": 0.4236,
+      "precision": 0.09285489455461127
+    },
+    {
+      "floor": 0.02,
+      "kept_true_share": 0.7458563535911602,
+      "new_per_entity": 0.22106666666666666,
+      "precision": 0.16284680337756333
+    },
+    {
+      "floor": 0.03,
+      "kept_true_share": 0.7154696132596685,
+      "new_per_entity": 0.15493333333333334,
+      "precision": 0.22289156626506024
+    },
+    {
+      "floor": 0.05,
+      "kept_true_share": 0.6574585635359116,
+      "new_per_entity": 0.10653333333333333,
+      "precision": 0.2978723404255319
+    },
+    {
+      "floor": 0.075,
+      "kept_true_share": 0.638121546961326,
+      "new_per_entity": 0.08,
+      "precision": 0.385
+    },
+    {
+      "floor": 0.1,
+      "kept_true_share": 0.5966850828729282,
+      "new_per_entity": 0.06586666666666667,
+      "precision": 0.43724696356275305
+    },
+    {
+      "floor": 0.15,
+      "kept_true_share": 0.5552486187845304,
+      "new_per_entity": 0.05106666666666667,
+      "precision": 0.5248041775456919
+    },
+    {
+      "floor": 0.2,
+      "kept_true_share": 0.5331491712707183,
+      "new_per_entity": 0.044,
+      "precision": 0.5848484848484848
+    },
+    {
+      "floor": 0.3,
+      "kept_true_share": 0.494475138121547,
+      "new_per_entity": 0.03573333333333333,
+      "precision": 0.667910447761194
+    }
+  ],
+  "val_new_true_pairs": 362,
+  "val_true_pairs_total": 25998,
+  "val_recall_gain_at_floor": 0.012539426109700746
+}

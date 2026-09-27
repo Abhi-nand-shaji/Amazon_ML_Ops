@@ -1,0 +1,10 @@
+# Cross-encoder stage only (src/kaggle_ce.py, run on a cloud GPU: Kaggle "GPU T4 x2", SageMaker, ...).
+# The rest of the pipeline needs only requirements.txt (CPU).
+# Model: microsoft/mdeberta-v3-base (MIT licence, 280M parameters), downloaded from Hugging Face at run time.
+torch>=2.3
+transformers>=4.44
+sentencepiece>=0.2
+protobuf>=4
+pandas>=2.0
+pyarrow>=14
+numpy>=1.26

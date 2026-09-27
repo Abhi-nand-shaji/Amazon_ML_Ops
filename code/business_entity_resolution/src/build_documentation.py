@@ -43,6 +43,68 @@ def grab(text: str, pattern: str, default: str = "n/a") -> str:
     return m.group(1) if m else default
 
 
+# (stack experiment, report row, label in the stage table); rows whose report does not exist are skipped
+STAGES = [
+    ("ce", "oracle: exactly the true candidates", "ceiling: exactly the true candidates of the v3 candidate sets"),
+    ("ce", "first-stage LightGBM p1", "1. first-stage LightGBM matcher (v1)"),
+    ("ce", "exclusivity-normalized q(p1)", "2. parameter-free exclusivity rule q(p1)"),
+    ("noce", "STACKER", "3. graph stacker: p1 + collective features (v2)"),
+    ("ce", "cross-encoder alone", "4. cross-encoder alone (mDeBERTa-v3-base)"),
+    ("ce", "mean(p1, p_ce)", "5. mean of p1 and the cross-encoder"),
+    ("ce", "STACKER", "6. graph stacker + cross-encoder (v3)"),
+    ("v4pre", "oracle: exactly the true candidates", "ceiling: exactly the true candidates of the v4 candidate sets"),
+    ("v4pre", "STACKER", "7. v4 candidates, cross-encoder on first-hop pairs only"),
+    ("v4", "STACKER", "8. v4 candidates + cross-encoder on all pairs (v4)"),
+]
+
+
+def stage_values(paths: Paths, final_exp: str, final_scores: str) -> dict:
+    """Placeholders of the stage-2 sections: stage table, final model numbers and top features, final test statistics."""
+    reports = {}
+    for exp in {s[0] for s in STAGES} | {final_exp}:
+        p = paths.artifacts_dir / f"stack_{exp}" / "stack_report.json"
+        if p.exists():
+            reports[exp] = json.loads(p.read_text())
+    rows = []
+    for exp, key, label in STAGES:
+        r = reports.get(exp, {}).get(key)
+        if r:
+            rows.append({"stage": label, "threshold": r["threshold"], "validation F0.5": r["val_macro_f05"],
+                         "hold-out F0.5": r["hold_macro_f05"], "hold-out precision": r["hold_precision"],
+                         "hold-out recall": r["hold_recall"], "hold-out singleton acc.": r["hold_singleton_acc"]})
+    out = {"STAGE_TABLE": md_table(pd.DataFrame(rows)) if rows else "(not available)"}
+    fin = reports.get(final_exp, {})
+    st = fin.get("STACKER")
+    if st:
+        out.update({"FINAL_HOLDOUT_F05": f"{st['hold_macro_f05']:.4f}", "FINAL_VAL_F05": f"{st['val_macro_f05']:.4f}",
+                    "FINAL_P": f"{st['hold_precision']:.4f}", "FINAL_R": f"{st['hold_recall']:.4f}",
+                    "FINAL_SINGLETON": f"{st['hold_singleton_acc']:.4f}", "FINAL_THRESHOLD": f"{st['threshold']:.2f}",
+                    "FINAL_TREES": str(st.get("trees", "n/a")),
+                    "FINAL_TOP_FEATURES": ", ".join(f"`{k}` ({v * 100:.1f}%)" for k, v in list(fin.get("feature_gain_share_top40", {}).items())[:12])})
+    orc = fin.get("oracle: exactly the true candidates")
+    if orc:
+        out["FINAL_CEILING"] = f"{orc['hold_macro_f05']:.4f}"
+    cand = fin.get("candidates_hold")
+    if cand:
+        out["FINAL_CAND_RECALL"] = f"{cand['candidate_recall']:.2%}"
+        out["FINAL_CPE_HOLD"] = f"{cand['candidates_per_entity']:.2f}"
+    inf_p = paths.reports_dir / f"inference_summary_{final_scores}.json"
+    if inf_p.exists():
+        inf = json.loads(inf_p.read_text())
+        pc = inf.get("per_country", {})
+        out["FINAL_TEST_PAIRS"] = f"{inf.get('pairs', 0):,}"
+        out["FINAL_TEST_CPE"] = f"{inf.get('pairs', 0) / max(1, inf.get('n_s1_entities', 1)):.2f}"
+        out["FINAL_INFERENCE_PER_COUNTRY"] = md_table(pd.DataFrame(pc).T.reset_index().rename(columns={"index": "country"}))
+    npf = paths.artifacts_dir / "new_pair_filter.json"
+    if npf.exists():
+        nf = json.loads(npf.read_text())
+        out["NEWPAIR_FLOOR"] = f"{nf['floor']:g}"
+        out["NEWPAIR_KEEP"] = f"{nf['keep_share']:.0%}"
+        out["NEWPAIR_GAIN"] = f"{nf['val_recall_gain_at_floor']:.2%}"
+        out["NEWPAIR_TABLE"] = md_table(pd.DataFrame(nf["tradeoff_val"]))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=None)
@@ -50,6 +112,9 @@ def main():
     ap.add_argument("--template", required=True, help="markdown with {PLACEHOLDERS}")
     ap.add_argument("--out", default=None)
     ap.add_argument("--extra", default=None, help="JSON file with additional {PLACEHOLDER: text} values (prose written by hand)")
+    ap.add_argument("--final-exp", default="ce", help="artifacts/stack_<exp> of the submitted stacker")
+    ap.add_argument("--final-scores", default="scores_test_stack_ce", help="scores dir whose inference summary describes the submission")
+    ap.add_argument("--edge-tag", default=None, help="edge-case report of this tag (stack_<exp>: the submitted stacker, stack_edge_inputs.py)")
     args = ap.parse_args()
     paths = Paths(args.root, args.tag)
     rep = paths.reports_dir
@@ -64,7 +129,7 @@ def main():
     infer = json.loads(infer_p.read_text()) if infer_p.exists() else {}
     stage2_p = rep / f"stage2_report{sfx}.json"
     stage2 = json.loads(stage2_p.read_text()) if stage2_p.exists() else None
-    edge_p = rep / f"edge_case_report{sfx}.md"
+    edge_p = rep / (f"edge_case_report_{args.edge_tag}.md" if args.edge_tag else f"edge_case_report{sfx}.md")
     edge = edge_p.read_text(encoding="utf-8") if edge_p.exists() else ""
 
     def section(title: str, text: str) -> str:
@@ -187,6 +252,8 @@ def main():
         "INFERENCE_PER_COUNTRY": md_table(pd.DataFrame(infer.get("per_country", {})).T.reset_index().rename(columns={"index": "country"})) if infer else "",
         "TOP_FEATURES": ", ".join(f"`{k}` ({v*100:.1f}%)" for k, v in list(val_report["top_features_gain_share"].items())[:8]),
     }
+    values.update(stage_values(paths, args.final_exp, args.final_scores))
+    values.setdefault("FINAL_CEILING", values["CEILING"])   # same candidate sets as the first design
     if args.extra:
         values.update(json.loads(Path(args.extra).read_text(encoding="utf-8")))
     text = Path(args.template).read_text(encoding="utf-8")
