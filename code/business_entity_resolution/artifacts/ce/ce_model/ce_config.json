@@ -1,0 +1,9 @@
+{
+  "model": "microsoft/mdeberta-v3-base",
+  "max_len": 128,
+  "epochs": 1.0,
+  "lr": 3e-05,
+  "adv_weight": 0.1,
+  "train_pairs": 1169095,
+  "steps": 9158
+}

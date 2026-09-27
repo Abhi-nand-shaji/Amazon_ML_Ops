@@ -145,11 +145,13 @@ def batches(lengths, max_tokens, max_rows, rng=None):
 
 
 def tokenize(tok, texts, left, right, chunk=200_000):
+    # No [CLS]/[SEP]: the released model was fine-tuned on plain concatenated pairs (the Kaggle image's tokenizer added
+    # no special tokens; reproduced exactly offline with add_special_tokens=False). Explicit, so any environment matches.
     seqs = []
     for a in range(0, len(left), chunk):
         l = [texts[i] for i in left[a:a + chunk]]
         r = [texts[i] for i in right[a:a + chunk]]
-        enc = tok(l, r, truncation="longest_first", max_length=MAX_LEN, padding=False,
+        enc = tok(l, r, truncation="longest_first", max_length=MAX_LEN, padding=False, add_special_tokens=False,
                   return_attention_mask=False, return_token_type_ids=False)
         seqs.extend(np.asarray(x, dtype=np.int32) for x in enc["input_ids"])
     return seqs
