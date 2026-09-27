@@ -21,6 +21,20 @@ CODE = ROOT / "code" / "business_entity_resolution"
 SKIP_DIRS = {"__pycache__", "cache", "logs"}
 
 
+def code_files() -> list[Path]:
+    """The files git tracks under code/ (so scratch files never reach the archive); every file when git is unavailable."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files", "-z", "--", str(CODE.relative_to(ROOT))], cwd=ROOT,
+                             capture_output=True, check=True).stdout.decode("utf-8")
+        files = [ROOT / f for f in out.split("\0") if f]
+        if files:
+            return sorted(p for p in files if p.exists())
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return sorted(CODE.rglob("*"))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="business_entity_resolution", help="team name used as the archive prefix")
@@ -39,12 +53,12 @@ def main():
     doc = ROOT / "Documentation_template.md"
     if doc.exists():
         members.append((doc, "Documentation_template.md"))
-    for p in sorted(CODE.rglob("*")):
+    for p in code_files():
         rel = p.relative_to(CODE)
         if p.is_dir() or any(part in SKIP_DIRS for part in rel.parts) or p.suffix in {".pyc", ".tmp"}:
             continue
-        if rel.parts[0] == "artifacts" and p.suffix not in {".txt", ".json"}:
-            continue                                           # only models / configs / feature lists from artifacts/
+        if rel.parts[0] == "artifacts" and p.suffix not in {".txt", ".json", ".md"}:
+            continue          # only models / configs / feature lists (the 558 MB cross-encoder weights live in Git LFS)
         members.append((p, f"code/business_entity_resolution/{rel.as_posix()}"))
 
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:

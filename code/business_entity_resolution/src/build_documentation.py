@@ -52,9 +52,10 @@ STAGES = [
     ("ce", "cross-encoder alone", "4. cross-encoder alone (mDeBERTa-v3-base)"),
     ("ce", "mean(p1, p_ce)", "5. mean of p1 and the cross-encoder"),
     ("ce", "STACKER", "6. graph stacker + cross-encoder (v3)"),
-    ("v4pre", "oracle: exactly the true candidates", "ceiling: exactly the true candidates of the v4 candidate sets"),
-    ("v4pre", "STACKER", "7. v4 candidates, cross-encoder on first-hop pairs only"),
-    ("v4", "STACKER", "8. v4 candidates + cross-encoder on all pairs (v4)"),
+    ("v4hop", "oracle: exactly the true candidates", "ceiling: exactly the true candidates of the v4 candidate sets"),
+    ("v4hop", "STACKER", "7. + second-hop candidates (cross-encoder on first-hop pairs only)"),
+    ("v4hce", "STACKER", "8. + cross-encoder scores of the new pairs (v4)"),
+    ("v4hce_ens", "ENSEMBLE", "9. v4 with 5 seed-bagged stackers averaged (tried, not adopted)"),
 ]
 
 
@@ -74,17 +75,18 @@ def stage_values(paths: Paths, final_exp: str, final_scores: str) -> dict:
                          "hold-out recall": r["hold_recall"], "hold-out singleton acc.": r["hold_singleton_acc"]})
     out = {"STAGE_TABLE": md_table(pd.DataFrame(rows)) if rows else "(not available)"}
     fin = reports.get(final_exp, {})
-    st = fin.get("STACKER")
+    st = fin.get("STACKER") or fin.get("ENSEMBLE")
     if st:
         out.update({"FINAL_HOLDOUT_F05": f"{st['hold_macro_f05']:.4f}", "FINAL_VAL_F05": f"{st['val_macro_f05']:.4f}",
                     "FINAL_P": f"{st['hold_precision']:.4f}", "FINAL_R": f"{st['hold_recall']:.4f}",
                     "FINAL_SINGLETON": f"{st['hold_singleton_acc']:.4f}", "FINAL_THRESHOLD": f"{st['threshold']:.2f}",
                     "FINAL_TREES": str(st.get("trees", "n/a")),
-                    "FINAL_TOP_FEATURES": ", ".join(f"`{k}` ({v * 100:.1f}%)" for k, v in list(fin.get("feature_gain_share_top40", {}).items())[:12])})
-    orc = fin.get("oracle: exactly the true candidates")
+                    "FINAL_TOP_FEATURES": ", ".join(f"`{k}` ({v * 100:.1f}%)" for k, v in list(
+                        (fin.get("feature_gain_share_top40") or reports.get("v4hce", {}).get("feature_gain_share_top40", {})).items())[:12])})
+    orc = fin.get("oracle: exactly the true candidates") or reports.get("v4hop", {}).get("oracle: exactly the true candidates")
     if orc:
         out["FINAL_CEILING"] = f"{orc['hold_macro_f05']:.4f}"
-    cand = fin.get("candidates_hold")
+    cand = fin.get("candidates_hold") or reports.get("v4hop", {}).get("candidates_hold")
     if cand:
         out["FINAL_CAND_RECALL"] = f"{cand['candidate_recall']:.2%}"
         out["FINAL_CPE_HOLD"] = f"{cand['candidates_per_entity']:.2f}"

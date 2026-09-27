@@ -5,52 +5,52 @@ fields, transliterated scripts), find for every Source-1 entity all Source-2 / S
 real-world business. Scored with per-entity **F0.5, macro-averaged** (precision-weighted; a true singleton scores 1 only
 when nothing is predicted). The test set adds a country (France) that never appears in training.
 
-The pipeline is **candidate generation in three cheap steps + a supervised matcher**, fully vectorized, and regenerates both
-submission files from the raw data on one laptop (8 cores, 15 GB RAM, no GPU, no external data or pre-trained models).
+The pipeline has four layers:
+1. **Candidate generation** on CPU: multi-key blocking, a learned ranker, a learned candidate filter, and second-hop retrieval.
+2. **First-stage LightGBM matcher**.
+3. **Fine-tuned multilingual cross-encoder**: mDeBERTa-v3-base, MIT licence, trained on a Kaggle GPU.
+4. **Graph stacker** that resolves every candidate collectively over the complete candidate graph (exclusivity of pool
+   records, entity context, sibling agreement).
+
+No external data or lookup service is used.
 
 ## Results
 
-| | |
-|---|---|
-| Matcher macro F0.5, 7,500 **hold-out** entities (never used for any decision) | **0.9647** |
-| Matcher macro F0.5, 7,500 validation entities | 0.9628 |
-| Simple baselines on the same entities (exact name, fuzzy rule, similarity / TF-IDF thresholds) | 0.48 - 0.73 |
-| Ceiling if every true pair that is a candidate were predicted | 0.9876 |
-| Candidates per Source-1 entity (training sample) / share of **all** true pairs kept | **6.08** / 96.55% |
-| Test split: candidate pairs / per entity | 12,288,781 / **7.1** (France 9.3, India 7.3, US 6.0) |
-| Test split: predicted matches | 5,671,608 pairs; 93.9% of the 1,732,544 entities get at least one |
+Macro F0.5 on 7,500 **hold-out** S1 entities, which were never used for training, early stopping or any selection. The
+last column is the public leaderboard.
 
-The candidate set was cut from 30 to ~6 per entity (retrieval + ranker shortlist -> learned filter) with no loss in F0.5:
-0.9625 / 0.9639 (validation / hold-out) with 30 candidates, 0.9628 / 0.9647 with the filtered set.
+| version | what it adds | hold-out F0.5 | public LB |
+|---|---|---|---|
+| v1 | blocking + ranker + candidate filter + LightGBM matcher | 0.9647 | 0.93 |
+| v2 | graph stacker on the full training world | 0.9742 | 0.95 |
+| v3 | + fine-tuned cross-encoder (mDeBERTa-v3-base) | 0.9818 | 0.9739 |
+| **v4** | + second-hop candidates, cross-encoder on the new pairs | **0.9847** | see portal |
 
-Full write-up: [`Documentation_template.md`](Documentation_template.md). Detailed reports: [`code/business_entity_resolution/reports/`](code/business_entity_resolution/reports/)
-(candidate generation, experiment logs, 26 edge cases with a failure taxonomy, validation / hold-out results).
+On the same entities, the ceiling with a perfect matcher on the v4 candidate sets is 0.9913. The v4 candidate set holds
+97.90% of all true pairs, with 7.4 candidates per entity. Simple baselines score 0.48 – 0.73.
+
+Full write-up: [`Documentation_template.md`](Documentation_template.md). Detailed reports are in
+[`code/business_entity_resolution/reports/`](code/business_entity_resolution/reports/).
 
 ## Method
 
 ```
 normalized records (per country partition; country is never a model feature)
-   |
-   |  1. retrieval: inverted indices over rare name / address tokens, exact name / compact name / postal keys,
-   |     address and name bigrams, compact-name prefix -- every key family capped by document frequency
+   |  1. retrieval: inverted indices over rare name / address tokens, exact keys, address and name bigrams,
+   |     compact-name prefix (document-frequency caps)            -> ~450 pool records per entity
+   |  2. learned ranker: shortlist of 30                          -> 97.0% of all true pairs
+   |  3. learned candidate filter (cross-fitted)                   -> ~6 per entity, 96.5% of all true pairs
+   |  4. second-hop retrieval: the entity's confident matches query the indices again,
+   |     learned new-pair filter                                   -> ~7.4 per entity, 97.9% of all true pairs
    v
-~450 retrieved pool records per entity
-   |  2. learned ranker (LightGBM on cheap retrieval evidence): shortlist of the best 30  -> 97.0% of all true pairs
-   v
-30 per entity
-   |  3. learned candidate filter (retrieval evidence + 7 cheap string similarities), cross-fitted,
-   |     probability floor chosen on validation entities                                -> 96.5% of all true pairs
-   v
-~6 per entity  = output/candidate_pairs.tsv = exactly what the matcher scores
-   |  4. matcher: LightGBM over ~90 vectorized pairwise features (string similarities, token / IDF overlap,
-   |     house number / postal agreement, pool ambiguity statistics, within-entity context)
-   |  5. decision: threshold searched on the challenge's own metric (singleton rule included)
+candidate set = output/candidate_pairs.tsv = exactly what the models score
+   |  first-stage LightGBM over ~90 pairwise features (p1) for the COMPLETE world
+   |  cross-encoder: mDeBERTa-v3-base fine-tuned on 1.17M labelled pairs (p_ce)
+   |  graph stacker: LightGBM over pairwise features + p1 + p_ce + collective features
+   |  decision: one threshold chosen with the challenge metric on validation entities
    v
 output/matching_results.tsv
 ```
-
-Evaluation mimics the task: S1 entities are split into train / validation / hold-out; validation entities drive every
-decision (early stopping, thresholds, rules, candidate floor), hold-out entities are scored once at the end.
 
 ## Repository layout
 
@@ -59,30 +59,29 @@ Documentation_template.md            methodology write-up (filled from the run's
 output/matching_results.tsv.gz       final matches (the leaderboard file), gzip-compressed
 output/candidate_pairs.tsv.gz        final candidate set, gzip-compressed
 code/business_entity_resolution/
-    src/                             pipeline (run_all.py runs everything; see its README)
-    tests/                           unit tests (python -m unittest discover -s code/business_entity_resolution/tests)
+    src/                             pipeline (see its README for every stage)
+    tests/                           unit tests
     reports/                         blocking / edge-case / validation reports, experiment logs
-    artifacts/                       trained models and configs (matcher, ranker, candidate filter, thresholds)
-    README.md, requirements.txt      exact run instructions and pinned dependencies
+    artifacts/                       trained models and configs: matcher, ranker, candidate filter, new-pair filter,
+                                     stackers, entity groups, fine-tuned cross-encoder (ce/ce_model, Git LFS)
+    README.md, requirements.txt, requirements-gpu.txt
 ```
 
-The result files are stored compressed because GitHub rejects files over 100 MB. To get the submission files:
+The result files are stored compressed because GitHub rejects files over 100 MB:
 
 ```bash
 gunzip -k output/matching_results.tsv.gz output/candidate_pairs.tsv.gz
 ```
 
+The cross-encoder weights (558 MB) are stored with Git LFS. Run `git lfs install` before cloning, or `git lfs pull` in
+an existing clone.
+
 ## Reproduce
 
-1. Put the challenge's `dataset/` (train / test TSV files) and `utils/validate_submission.py` next to `code/`
-   (they are not redistributed here).
-2. Create the environment: `python -m venv .venv` and `pip install -r code/business_entity_resolution/requirements.txt`.
-3. Run everything (stages are resumable; `--list` shows them, `--from <stage>` resumes):
-
-```bash
-python code/business_entity_resolution/src/run_all.py
-```
-
-On the reference laptop: normalization ~20 min, test-split retrieval + ranker ~71 min, candidate filter ~13 min, scoring
-~15 min, training stages a few minutes each. Stage-by-stage commands are in
-[`code/business_entity_resolution/README.md`](code/business_entity_resolution/README.md).
+1. Put the challenge's `dataset/` and `utils/validate_submission.py` next to `code/`. They are not redistributed here.
+2. Create a CPU environment: `pip install -r code/business_entity_resolution/requirements.txt`.
+3. Run the stages in the order given in
+   [`code/business_entity_resolution/README.md`](code/business_entity_resolution/README.md). `run_all.py` runs the first
+   design. The stacker, second-hop and cross-encoder stages have their own commands there. The two GPU scripts
+   (`kaggle_ce.py`, `kaggle_dense.py`) are self-contained and run on Kaggle "GPU T4 x2" or any CUDA machine
+   (`requirements-gpu.txt`).

@@ -50,8 +50,10 @@ def main():
 
     paths = Paths(args.root, args.tag)
     sdir = Paths(args.root).artifacts_dir / f"stack{('_' + args.exp) if args.exp else ''}"
-    booster = lgb.Booster(model_file=str(sdir / "stack_model.txt"))
     spec = json.loads((sdir / "stack_features.json").read_text())
+    n_ens = int(spec.get("ensemble", 0))          # exp_stack_ensemble.py: seed-bagged members, probabilities averaged
+    boosters = ([lgb.Booster(model_file=str(sdir / f"stack_model_{k}.txt")) for k in range(n_ens)] if n_ens
+                else [lgb.Booster(model_file=str(sdir / "stack_model.txt"))])
     fcols = spec["feature_columns"]
     out_dir = Paths(args.root).cache_dir / f"scores_test_stack{('_' + args.exp) if args.exp else ''}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +119,7 @@ def main():
             if extra_all is not None:
                 for c in V4_EXTRA:
                     X[c] = extra_all[c].to_numpy()[a:b]
-            q = booster.predict(X[fcols], num_threads=args.threads).astype(np.float32)
+            q = np.mean([bo.predict(X[fcols], num_threads=args.threads) for bo in boosters], axis=0).astype(np.float32)
             t = pa.table({"s1_row": ch.s1_row.astype(np.int32), "pool_row": ch.pool_row.astype(np.int32), "p": q})
             writer = writer or pq.ParquetWriter(tmp, t.schema)
             writer.write_table(t)

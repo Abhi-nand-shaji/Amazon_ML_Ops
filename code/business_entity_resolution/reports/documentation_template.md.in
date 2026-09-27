@@ -279,9 +279,10 @@ simple rule was kept (stacker threshold {FINAL_THRESHOLD}).
 - **Common false positives (wrong merges):** {FALSE_POSITIVES}
 - **Common false negatives (missed matches):** {FALSE_NEGATIVES}
 
-Per-edge-case results for the first-stage matcher (26 cases of the brief, with counts, candidate recall, precision,
-recall, F0.5, failure taxonomy and examples) are in `code/business_entity_resolution/reports/edge_case_report.md`. The
-summary is in Appendix B.3.
+Per-edge-case results for the submitted model (26 cases of the brief, with counts, candidate recall, precision,
+recall, F0.5, failure taxonomy and examples) are in
+`code/business_entity_resolution/reports/edge_case_report_stack_v4hce.md` (the first design's are in `edge_case_report.md`).
+The summary is in Appendix B.3.
 
 ---
 
@@ -304,7 +305,7 @@ summary is in Appendix B.3.
    `run_world_cut.py` -> `run_world_score.py`.
 3. **Cross-encoder**: `export_ce_package.py` -> `kaggle_ce.py` (GPU, Kaggle) -> `ce_scores_import.py`.
 {V4_CODE_STEPS}
-4. **Stacker and output**: `run_stack.py` -> `run_stack_infer.py` -> `run_infer.py --scores-dir ... --decision-config ...`
+5. **Stacker and output**: `run_stack.py` -> `run_stack_infer.py` -> `run_infer.py --scores-dir ... --decision-config ...`
    (writes `output/matching_results.tsv` and `output/candidate_pairs.tsv`) -> `utils/validate_submission.py`.
 
 Feature code: `features.py` (pairwise), `collective.py`, `stack_features.py`, `address_structure.py`{V4_CODE_FILES}.
@@ -323,7 +324,7 @@ model families, hold-out). The stage-2 experiments are the table in Section 5.
 
 {V4_NEWPAIR_APPENDIX}
 
-#### B.3 Failure taxonomy and edge cases (first-stage matcher, validation entities)
+#### B.3 Failure taxonomy and edge cases (submitted model, validation entities)
 {TAXONOMY}
 
 Per edge case (the 26 cases of the brief that can be evaluated on the labelled data; entities may belong to several cases):

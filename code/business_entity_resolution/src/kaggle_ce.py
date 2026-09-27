@@ -31,6 +31,7 @@ import time
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 # ------------------------------------------------------------------ settings
 MODEL_NAME = os.environ.get("CE_MODEL", "microsoft/mdeberta-v3-base")
@@ -203,7 +204,11 @@ def main():
     pad_id = tok.pad_token_id
 
     # ---------------------------------------------------------- resume: fine-tuned model from an earlier run?
-    prev_model = find_input("ce_model/ce_weights_fp16.pt")
+    # fine-tuned weights: an earlier run's output (ce_model/...) or shipped flat inside the data package
+    prev_model = find_input("ce_model/ce_weights_fp16.pt") or find_input("ce_weights_fp16.pt")
+    if not prev_model and not SMOKE and pq.ParquetFile(paths["pairs_train"]).metadata.num_rows < 1000:
+        sys.exit("scoring-only package (placeholder pairs_train) but no ce_weights_fp16.pt found: add the fine-tuned "
+                 "weights to the dataset or attach the first cross-encoder run's output")
     model = CrossEncoder(MODEL_NAME, adv=ADV_WEIGHT > 0)
     ev = pd.read_parquet(paths["pairs_eval"])
     if SMOKE:
